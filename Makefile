@@ -7,10 +7,9 @@ CC ?= gcc
 LD ?= gcc
 
 # space separated list of directories with header files
-INCLUDE_DIRS := fs protocol utils producer-consumer response_t register_t.
+INCLUDE_DIRS := fs protocol utils producer-consumer response_t register_t .
 # this creates a space separated list of -I<dir> where <dir> is each of the values in INCLUDE_DIRS
 INCLUDES = $(addprefix -I, $(INCLUDE_DIRS))
-
 
 SOURCES  := $(wildcard */*.c)
 HEADERS  := $(wildcard */*.h)

@@ -15,7 +15,8 @@
 int main(int argc, char *argv[])
 {
     // Check command line arguments
-    if (argc < 4) {
+    if (argc < 4) 
+    {
         printf("Usage: publisher <box_name> <message>\n");
         return 1;
     }
@@ -26,14 +27,16 @@ int main(int argc, char *argv[])
 
 
     // Create session pipe
-    if (mkfifo(PIPE_NAME, 0666) < 0) {
+    if (mkfifo(PIPE_NAME, 0666) < 0) 
+    {
         perror("Error creating session pipe");
         return 1;
     }
 
     // Connect to server
     int server_fd = open(register_pipe_name, O_WRONLY);
-    if (server_fd < 0) {
+    if (server_fd < 0) 
+    {
         perror("Error connecting to server");
         return 1;
     }
@@ -48,14 +51,16 @@ int main(int argc, char *argv[])
     strcpy(register_msg.box_name, box_name);
 
 
-    if (write(server_fd, &register_msg, sizeof(register_t)) < 0) {
+    if (write(server_fd, &register_msg, sizeof(register_t)) < 0) 
+    {
         perror("Error sending register message to server");
         return 1;
     }
 
     // Open session pipe
     int session_fd = open(pipe_name, O_WRONLY);
-    if (session_fd < 0) {
+    if (session_fd < 0) 
+    {
         perror("Error opening session pipe");
         return 1;
     }
@@ -63,7 +68,8 @@ int main(int argc, char *argv[])
     //TODO...
 
     // Wait for server response
-    if (read(session_fd, server_response, MESSAGE_SIZE) < 0) {
+    if (read(session_fd, server_response, MESSAGE_SIZE) < 0) 
+    {
         perror("Error reading server response");
         return 1;
     }
