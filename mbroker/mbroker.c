@@ -39,7 +39,7 @@ void handle_session(int id) {
         // publisher - handle message as a publish request
         } else if (session.type == 1) {
         // subscriber - handle message as a subscribe request
-        } else {
+        } else if (session.type == 2) {
         // manager - handle message as a management request
         }
 
@@ -71,7 +71,7 @@ int main(int argc, char *argv[])
     // initialize TecnicoFS
     if (tfs_init() < 0) 
     {
-        printf("Error initializing TecnicoFS\n");
+        printf("Error initializing TecnicoFS.\n");
         return 1;
     }
 
@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
         // create thread to handle session
         pthread_t session_thread;
         pthread_create(&session_thread, NULL, handle_session, (void *)new_session_id);
-        }
+    }
 
     // cleanup and exit
     tfs_destroy();
