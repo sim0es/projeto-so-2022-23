@@ -8,10 +8,8 @@
 
 #define MAX_SESSIONS 100
 
-// global mutex for synchronization
 pthread_mutex_t mutex;
 
-// struct for holding session information
 typedef struct 
 {
     int id;   
@@ -31,7 +29,6 @@ void handle_session(int id) {
     // read message from client pipe
         bytes_read = read(session.pipefd, buffer, sizeof(buffer));
 
-        // lock global mutex
         pthread_mutex_lock(&mutex);
 
         // handle message based on session type
@@ -43,7 +40,6 @@ void handle_session(int id) {
         // manager - handle message as a management request
         }
 
-        // unlock global mutex
         pthread_mutex_unlock(&mutex);
     }
 }
@@ -55,7 +51,6 @@ int main(int argc, char *argv[])
     int register_pipefd;
     int i, new_session_id;
 
-    // check arguments
     if (argc < 3) 
     {
         printf("Usage: %s <register_pipe_name> <max_sessions>\n", argv[0]);
@@ -65,10 +60,8 @@ int main(int argc, char *argv[])
     register_pipe_name = argv[1];
     max_sessions = atoi(argv[2]);
 
-    // initialize global mutex
     pthread_mutex_init(&mutex, NULL);
 
-    // initialize TecnicoFS
     if (tfs_init() < 0) 
     {
         printf("Error initializing TecnicoFS.\n");
