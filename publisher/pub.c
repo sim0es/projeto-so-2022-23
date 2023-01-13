@@ -65,7 +65,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    //TODO...
+    //TO DO...
 
     // Wait for server response
     if (read(session_fd, server_response, MESSAGE_SIZE) < 0) 
