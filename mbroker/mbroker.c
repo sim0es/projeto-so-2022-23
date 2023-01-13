@@ -32,11 +32,14 @@ void handle_session(int id) {
         pthread_mutex_lock(&mutex);
 
         // handle message based on session type
-        if (session.type == 0) {
+        if (session.type == 0) 
+        {
         // publisher - handle message as a publish request
-        } else if (session.type == 1) {
+        } else if (session.type == 1) 
+        {
         // subscriber - handle message as a subscribe request
-        } else if (session.type == 2) {
+        } else if (session.type == 2) 
+        {
         // manager - handle message as a management request
         }
 
