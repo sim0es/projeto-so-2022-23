@@ -17,8 +17,8 @@ int main(int argc, char *argv[])
     // Check command line arguments
     if (argc < 4) 
     {
-        printf("Usage: publisher <box_name> <message>\n");
-        return 1;
+        printf("Usage: pub <register_pipe_name> <pipe_name <box_name>\n");
+        exit(EXIT_FAILURE);
     }
 
     char *register_pipe_name = argv[1];
@@ -65,22 +65,12 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    //TO DO...
-
-    // Wait for server response
-    if (read(session_fd, server_response, MESSAGE_SIZE) < 0) 
+    if (unlink(PIPE_NAME) != 0)
     {
-        perror("Error reading server response");
-        return 1;
+        fprintf("Error unlinking pipe: %s", PIPE_NAME);
     }
 
-    // Check if publish was successful
-    if (strcmp(server_response, "OK") != 0) {
-        printf("Error: publish was not successful\n");
-        return 1;
-    }
-
-    // Close pipes and exit
+    // Close pipes and exit 
     close(session_fd);
     close(server_fd);
     unlink(PIPE_NAME);
