@@ -13,7 +13,8 @@ static void print_usage() {
                     "   manager <register_pipe_name> list\n");
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) 
+{
     char *register_pipe_name, *command, *box_name;
     int register_pipefd;
 

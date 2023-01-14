@@ -241,7 +241,7 @@ int main(int argc, char **argv) {
         PANIC("mkfifo failed: %s\n", strerror(errno));
     }
 
-    INFO("Starting mbroker with registry pipe '%s'", in_pipe_path);
+    printf("Starting mbroker with registry pipe '%s'", in_pipe_path);
 
     fd_in = open(in_pipe_path, O_RDONLY);
     if (fd_in < 0) {
