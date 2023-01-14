@@ -5,6 +5,12 @@
 
 int pcq_create(pc_queue_t *queue, size_t capacity)
 {
+    queue->pcq_buffer = malloc(capacity * sizeof(void *));
+    if (queue->pcq_buffer == NULL)
+    {
+        return -1;
+    }
+
     queue->pcq_capacity = capacity;
     queue->pcq_current_size = 0;
     queue->pcq_head = 0;
