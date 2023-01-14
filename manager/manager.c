@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
     register_pipefd = open(register_pipe_name, O_WRONLY);
 
     if (register_pipefd == -1) {
-        ERROR("Error opening pipe %s", register_pipe_name);
+        printf("Error opening pipe %s", register_pipe_name);
         return -1;
     }
 
@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
 
     // receive response from server
     char buffer[1024];
-    int bytes_read = read(register_pipefd, buffer, sizeof(buffer));
+    ssize_t bytes_read = read(register_pipefd, buffer, sizeof(buffer));
     buffer[bytes_read] = '\0';
 
     // print response

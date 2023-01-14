@@ -11,11 +11,13 @@ int pcq_create(pc_queue_t *queue, size_t capacity)
         return -1;
     }
 
+    // set the values to 0 and capacity to what's given by the user 
     queue->pcq_capacity = capacity;
     queue->pcq_current_size = 0;
     queue->pcq_head = 0;
     queue->pcq_tail = 0;
 
+    // initialize all mutexes
     pthread_mutex_init(&queue->pcq_current_size_lock, NULL);
     pthread_mutex_init(&queue->pcq_head_lock, NULL);
     pthread_mutex_init(&queue->pcq_tail_lock, NULL);
@@ -27,8 +29,10 @@ int pcq_create(pc_queue_t *queue, size_t capacity)
 
 int pcq_destroy(pc_queue_t *queue)
 {
+    // free buffer
     free(queue->pcq_buffer);
     
+    // destroy all mutexes
     pthread_mutex_destroy(&queue->pcq_current_size_lock);
     pthread_mutex_destroy(&queue->pcq_head_lock);
     pthread_mutex_destroy(&queue->pcq_tail_lock);
@@ -63,7 +67,7 @@ void *pcq_dequeue(pc_queue_t *queue)
 {
     pthread_mutex_lock(&queue->pcq_current_size_lock);
 
-    while (&queue->pcq_current_size == 0)
+    while (queue->pcq_current_size == 0)
     {
         pthread_cond_wait(&queue->pcq_popper_condvar, &queue->pcq_current_size_lock);
     }
@@ -73,7 +77,6 @@ void *pcq_dequeue(pc_queue_t *queue)
     pthread_mutex_unlock(&queue->pcq_current_size_lock);
 
     pthread_mutex_lock(&queue->pcq_tail_lock);
-    queue->pcq_buffer[queue->pcq_tail];
     queue->pcq_tail = (queue->pcq_tail + 1) % queue->pcq_capacity;
     pthread_mutex_unlock(&queue->pcq_tail_lock);
 
