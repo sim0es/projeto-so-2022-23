@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
             unlink(in_pipe_name);
             PANIC("Error reading from pipe: '%s' - %s", in_pipe_name, strerror(errno));
         }
-        printf("Received message: %s\n", message);
+        fprintf(stdout, "%s\n", message);
         memset(message, 0, sizeof(message));
         bytes_read = safe_read(in_fd, &ret_op_code, sizeof(uint8_t));
     }
