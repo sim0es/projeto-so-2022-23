@@ -65,7 +65,7 @@ int subscriber() {
         if (bytes_read == -1) {
             WARN("Error reading from register pipe: %s", strerror(errno));
         } else {
-            WARN("Unexpected number of bytes read from register pipe. \ 
+            WARN("Unexpected number of bytes read from register pipe. \
                     Expected %lu, got %lu", sizeof(char) * MAX_BOX_NAME, bytes_read);
         }
         return -1;
@@ -74,7 +74,7 @@ int subscriber() {
     return 0;
 }
 
-int handle_publisher() {
+int publisher() {
     ssize_t bytes_read;
     char client_path[MAX_PIPE_NAME + 1] = {0};
     char box_name[MAX_BOX_NAME + 1] = {0};
@@ -195,17 +195,6 @@ static int remove_box(char *box_name, char *error_msg)
     }
 
     return 0;
-}
-
-static void write_box(void *packet, box_t *box, uint8_t last, size_t *offset) {
-    const uint8_t ret_opcode = TFS_OPCODE_ANS_LST_BOX;
-
-    packet_cpy(packet, offset, &box->n_subscribers, sizeof(uint64_t));
-    packet_cpy(packet, offset, &box->n_publishers, sizeof(uint64_t));
-    packet_cpy(packet, offset, &ret_opcode, sizeof(uint8_t));
-    packet_cpy(packet, offset, &box->size, sizeof(uint64_t));
-    packet_cpy(packet, offset, &last, sizeof(uint8_t));
-    packet_cpy(packet, offset, box->name, sizeof(char) * MAX_BOX_NAME);
 }
 
 int handle_box_wrapper(int (*handle_box_func)(char *, char *)) {

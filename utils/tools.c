@@ -80,3 +80,14 @@ ssize_t safe_write(int fd, const void *buff, size_t len) {
 
     return written;
 }
+
+box_t *find_box(node_t *head, char *box_name) {
+    node_t *tmp = head;
+    while (tmp != NULL) {
+        if (!strcmp(tmp->data->name, box_name)) {
+            return tmp->data;
+        }
+        tmp = tmp->next;
+    }
+    return NULL;
+}

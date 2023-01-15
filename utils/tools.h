@@ -50,4 +50,6 @@ ssize_t safe_read(int fd, void *buff, size_t len);
 
 ssize_t safe_write(int fd, const void *buff, size_t len);
 
+box_t *find_box(node_t *head, char *box_name);
+
 #endif
