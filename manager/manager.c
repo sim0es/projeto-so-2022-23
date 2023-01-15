@@ -103,10 +103,10 @@ int list_boxes() {
         return -1;
     }
 
-    uint8_t ret_op_code;
+    uint8_t ret_op_code = '\0';
     int32_t ret_status;
     char error_msg[MAX_ERROR_MSG + 1];
-    uint64_t box_count;
+    uint64_t box_count = 0;
 
     if (ret_op_code != TFS_OPCODE_ANS_LST_BOX) {
         PANIC("Invalid opcode %d\n", ret_op_code);
@@ -165,7 +165,11 @@ int main(int argc, char *argv[]) {
             print_usage_and_exit();
         }
         char *box_name = argv[4];
-        int ret = box_command(box_name, TFS_OPCODE_CRT_BOX);
+        int ret = commands_to_box(box_name, TFS_OPCODE_CRT_BOX);
+        if (ret < 0) {
+            WARN("Command failed\n");
+            exit(EXIT_FAILURE);
+        }
         printf("Box created successfully\n");
     } else if (strcmp(command, "remove") == 0) {
         if (argc < 5) 
@@ -173,10 +177,18 @@ int main(int argc, char *argv[]) {
             print_usage_and_exit();
         }
         char *box_name = argv[4];
-        int ret = box_command(box_name, TFS_OPCODE_RMV_BOX);
+        int ret = commands_to_box(box_name, TFS_OPCODE_RMV_BOX);
+        if (ret < 0) {
+            WARN("Command failed\n");
+            exit(EXIT_FAILURE);
+        }
         printf("Box removed successfully\n");
     } else if (strcmp(command, "list") == 0) {
         int ret = list_boxes();
+        if (ret < 0) {
+            WARN("Command failed\n");
+            exit(EXIT_FAILURE);
+        }
     } else {
         print_usage_and_exit();
     }
