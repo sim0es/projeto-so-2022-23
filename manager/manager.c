@@ -37,7 +37,7 @@ int box_command(char *box_name, tfs_opcode_t op_code) {
     size_t packet_len = sizeof(uint8_t);
     packet_len += sizeof(char) * (MAX_PIPE_NAME + MAX_BOX_NAME);
 
-    void *packet = alloca(packet_len);
+    void *packet = malloc(packet_len);
     size_t offset = 0;
     const uint8_t code = op_code;
 
