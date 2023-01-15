@@ -52,7 +52,7 @@ int commands_to_box(char *box_name, tfs_opcode_t op_code) {
         return -1;
     }
 
-    uint8_t ret_op_code;
+    uint8_t ret_op_code = '\0';
     int32_t ret_status;
     char error_msg[MAX_ERROR_MSG + 1];
 
