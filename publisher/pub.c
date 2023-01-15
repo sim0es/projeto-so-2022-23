@@ -22,8 +22,8 @@ int main(int argc, char *argv[])
     }
 
     char *register_pipe_name = argv[1];
-    char *pipe_name = argv[1];
-    char *box_name = argv[1];
+    char *pipe_name = argv[2];
+    char *box_name = argv[3];
 
 
     // Create session pipe
@@ -65,9 +65,36 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (unlink(PIPE_NAME) != 0)
+    // Wait for response from server
+    response_t response;
+    if (read(session_fd, &response, sizeof(response_t)) < 0)
     {
-        fprintf("Error unlinking pipe: %s", PIPE_NAME);
+        perror("Error reading response from server");
+        return 1;
+    }
+
+    if (response.code == 0)
+    {
+        // Successful registration
+        printf("Successfully registered with server.\n");
+
+        // Begin publishing messages
+        char message[MESSAGE_SIZE];
+        while (1)
+        {
+            printf("Enter message to publish: ");
+            scanf("%s", message);
+            if (write(session_fd, message, sizeof(message)) < 0)
+            {
+                perror("Error writing message to session pipe");
+                break;
+            }
+        }
+    }
+    else
+    {
+        // Registration failed
+        printf("Registration failed. Error code: %d\n", response.code);
     }
 
     // Close pipes and exit 
