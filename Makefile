@@ -82,7 +82,7 @@ test: $(TEST_TARGETS)
 # enclosing rule. See https://www.cs.colby.edu/maxwell/courses/tutorials/maketutor/
 
 fmt: $(SOURCES) $(HEADERS)
-	clang-format -i $^
+	clang-format -i -style=llvm $^
 
 
 
