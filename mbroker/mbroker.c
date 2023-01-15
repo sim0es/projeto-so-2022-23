@@ -31,53 +31,49 @@ void safe_close(int status) {
         PANIC("Failed to delete pipe on exit: %s\n", strerror(errno));
     }
 
-    // Apagar lista de caixas;
+    while (head) {
+        node_t *next = head->next;
+        free(head);
+        head = next;
+    }
 
     fprintf(stdout, "Successfully closing mbroker...\n");
     exit(status);
 }
 
-static int create_box(char *box_name, char *error_msg) {
+// alterada
+static int create_box(char *box_name, char *error_msg) 
+{
     int ret_status = -1;
-    int fhandle = tfs_open(box_name, TFS_O_APPEND);
-    box_t *box;
+    box_t *box = find_box(head, box_name);
 
-    if (fhandle == -1) {
-        fhandle = tfs_open(box_name, TFS_O_CREAT);
-        if (fhandle != -1) {
-            ret_status = 0;
-            if (tfs_close(fhandle) != 0) {
-                WARN("Error closing box.");
-            }
-        } else {
-            strcpy(error_msg, "Error creating file.");
-        }
-    } else {
+    if (box == NULL) 
+    {
+        box = malloc(sizeof(box_t));
+        init_tfs_box(box, box_name);
+        append_box(&head, box);
+        box_count++;
+        ret_status = 0;
+    } else 
+    {
         strcpy(error_msg, "Box name already exists.");
-        if (tfs_close(fhandle) != 0) {
-            WARN("Error closing box.");
-        }
     }
-
-    box = malloc(sizeof(box_t));
-    init_tfs_box(box, box_name);
-
-    append_box(&head, box);
-    box_count++;
-
     return ret_status;
 }
 
-static int remove_box(char *box_name, char *error_msg) {
-    delete_box(&head, box_name);
-    box_count--;
-
-    if (tfs_unlink(box_name) != 0) {
+// alterada
+static int remove_box(char *box_name, char *error_msg) 
+{
+    box_t *box = find_box(head, box_name);
+    if (box != NULL) {
+        delete_box(&head, box_name);
+        box_count--;
+        free(box);
+        return 0;
+    } else {
         strcpy(error_msg, "Error deleting box.");
         return -1;
     }
-
-    return 0;
 }
 
 static void write_box(void *packet, box_t *box, uint8_t last, size_t *offset) {
@@ -91,16 +87,19 @@ static void write_box(void *packet, box_t *box, uint8_t last, size_t *offset) {
     packet_cpy(packet, offset, &box->n_subscribers, sizeof(uint64_t));
 }
 
+// alterada
 int handle_box_wrapper(int (*handle_box_func)(char *, char *)) {
     char client_path[MAX_PIPE_NAME + 1];
     char box_name[MAX_BOX_NAME + 1];
+    char error_msg[MAX_ERROR_MSG + 1] = {0};
     ssize_t bytes_read;
 
     bytes_read = safe_read(fd_in, client_path, sizeof(char) * MAX_PIPE_NAME);
     client_path[MAX_PIPE_NAME] = '\0';
 
     if (bytes_read != sizeof(char) * MAX_PIPE_NAME) {
-        PANIC("Error reading from pipe %s\n", in_pipe_path);
+        printf("Error reading from pipe %s\n", in_pipe_path);
+        return -1;
     }
 
     bytes_read = safe_read(fd_in, box_name, sizeof(char) * MAX_BOX_NAME);
@@ -108,199 +107,183 @@ int handle_box_wrapper(int (*handle_box_func)(char *, char *)) {
 
     if (bytes_read != sizeof(char) * MAX_BOX_NAME) {
         PANIC("Error reading from pipe %s\n", in_pipe_path);
+        return -1;
     }
 
     uint8_t ret_op_code = TFS_OPCODE_ANS_CRT_BOX;
-    int32_t ret_status = -1;
-    char error_msg[MAX_ERR_MSG + 1] = {0};
+    int ret_status = handle_box_func(box_name, error_msg);
 
-    ret_status = handle_box_func(box_name, error_msg);
-
-    int out_fd = open(client_path, O_WRONLY);
-    if (out_fd < 0) {
-        WARN("Failed to open client pipe: %s", client_path);
+    int client_fd = open(client_path, O_WRONLY);
+    if (client_fd < 0) {
+        printf("Failed to open client pipe: %s", client_path);
         return -1;
     }
 
     size_t offset = 0;
-    size_t packet_len = sizeof(uint8_t) + sizeof(int32_t);
-    packet_len += sizeof(char) * MAX_ERR_MSG;
+    size_t packet_len = sizeof(uint8_t) + sizeof(int);
 
-    void *packet = malloc(packet_len);
-    packet_cpy(packet, &offset, &ret_op_code, sizeof(uint8_t));
-    packet_cpy(packet, &offset, &ret_status, sizeof(int32_t));
-    packet_cpy(packet, &offset, error_msg, sizeof(char) * MAX_ERR_MSG);
-
-    ssize_t written = safe_write(out_fd, packet, packet_len);
-    close(out_fd);
-
-    if (written != packet_len || ret_status != 0) {
-        return -1;
+    if (ret_status != 0) {
+        packet_len += sizeof(char) * MAX_ERROR_MSG;
     }
 
-    INFO("Successfully handled creation/deletion of box '%s'", box_name);
+    void *packet = malloc(packet_len);
 
-    return 0;
+    if (ret_status == 0) {
+        const uint8_t ret_opcode = TFS_OPCODE_ANS_OK;
+        packet = malloc(sizeof(uint8_t));
+        packet_cpy(packet, &offset, &ret_opcode, sizeof(uint8_t));
+    } else {
+        const uint8_t ret_opcode = TFS_OPCODE_ANS_ERR;
+        packet = malloc(sizeof(uint8_t) + sizeof(char) * MAX_ERR_MSG);
+        offset = 0;
+        packet_cpy(packet, &offset, &ret_opcode, sizeof(uint8_t));
+        packet_cpy(packet, &offset, error_msg, sizeof(char) * MAX_ERR_MSG);
+    }
+
+    ssize_t bytes_written = safe_write(client_fd, packet, offset);
+    if (bytes_written != offset) {
+        WARN("Error writing to pipe: '%s'\n", client_path);
+    }
+
+    free(packet);
+    close(client_fd);
+
+    return ret_status;
+        
+    // size_t offset = 0;
+    // size_t packet_len = sizeof(uint8_t) + sizeof(int);
+    // packet_len += sizeof(char) * MAX_ERROR_MSG;
+
+    // void *packet = malloc(packet_len);
+    // packet_cpy(packet, &offset, &ret_op_code, sizeof(uint8_t));
+    // packet_cpy(packet, &offset, &ret_status, sizeof(int32_t));
+    // packet_cpy(packet, &offset, error_msg, sizeof(char) * MAX_ERROR_MSG);
+
+    // ssize_t written = safe_write(client_fd, packet, packet_len);
+    // close(client_fd);
+
+    // if (written != packet_len || ret_status != 0) {
+    //     return -1;
+    // }
+
+    // printf("Box '%s' successfully closed.\n", box_name);
+
+    // return 0;
 }
 
-int handle_list_boxes() {
+int handle_list_boxes(void) {
     char client_path[MAX_PIPE_NAME + 1];
+    ssize_t bytes_read;
 
-    ssize_t bytes_read =
-        safe_read(fd_in, client_path, sizeof(char) * MAX_PIPE_NAME);
+    bytes_read = safe_read(fd_in, client_path, sizeof(char) * MAX_PIPE_NAME);
     client_path[MAX_PIPE_NAME] = '\0';
 
     if (bytes_read != sizeof(char) * MAX_PIPE_NAME) {
-        PANIC("Error reading from pipe %s\n", in_pipe_path);
-    }
-
-    const uint8_t ret_opcode = TFS_OPCODE_ANS_LST_BOX;
-    uint8_t last = 0;
-    size_t packet_len = (2 * sizeof(uint8_t)) + (sizeof(char) * MAX_BOX_NAME) +
-                        (sizeof(uint64_t) * 3);
-    size_t offset = 0;
-    void *packet = malloc(packet_len);
-
-    int out_fd = open(client_path, O_WRONLY);
-    if (out_fd < 0) {
-        WARN("Failed to open client pipe: %s", client_path);
+        printf("Error reading from pipe %s\n", in_pipe_path);
         return -1;
     }
 
-    if (head == NULL) {
-        last = 1;
-        char null_box_name[MAX_BOX_NAME + 1] = {0};
-        uint64_t null_box_size = 0, null_n_pubs = 0, null_n_subs = 0;
-        packet_cpy(packet, &offset, &ret_opcode, sizeof(uint8_t));
-        packet_cpy(packet, &offset, &last, sizeof(uint8_t));
-        packet_cpy(packet, &offset, null_box_name, sizeof(char) * MAX_BOX_NAME);
-        packet_cpy(packet, &offset, &null_box_size, sizeof(uint64_t));
-        packet_cpy(packet, &offset, &null_n_pubs, sizeof(uint64_t));
-        packet_cpy(packet, &offset, &null_n_subs, sizeof(uint64_t));
-
-        ssize_t bytes_written = safe_write(out_fd, packet, packet_len);
-        if (bytes_written != packet_len) {
-            WARN("Error writing to pipe: '%s'", client_path);
-            free(packet);
-            close(out_fd);
-            return -1;
-        }
-    } else {
-        node_t *tmp = head;
-        while (tmp->next != NULL) {
-            write_box(packet, tmp->data, last, &offset);
-
-            ssize_t bytes_written = safe_write(out_fd, packet, packet_len);
-            if (bytes_written != packet_len) {
-                WARN("Error writing to pipe: '%s'", client_path);
-                free(packet);
-                close(out_fd);
-                return -1;
-            }
-
-            tmp = tmp->next;
-            offset = 0;
-        }
-        last = 1;
-        write_box(packet, tmp->data, last, &offset);
-        ssize_t bytes_written = safe_write(out_fd, packet, packet_len);
-        if (bytes_written != packet_len) {
-            WARN("Error writing to pipe: '%s'", client_path);
-            free(packet);
-            close(out_fd);
-            return -1;
-        }
+    int fd_out = open(client_path, O_WRONLY);
+    if (fd_out < 0) {
+        printf("Error opening pipe %s\n", client_path);
+        return -1;
     }
 
-    INFO("Successfully listed boxes");
+    if (write(fd_out, &box_count, sizeof(int)) < 0) {
+        printf("Error writing to pipe %s\n", client_path);
+        return -1;
+    }
 
+    node_t *cur = head;
+    while (cur) {
+        if (write(fd_out, cur->data, sizeof(box_t)) < 0) {
+            printf("Error writing to pipe %s\n", client_path);
+            return -1;
+        }
+        cur = cur->next;
+    }
+
+    close(fd_out);
     return 0;
 }
 
-int main(int argc, char **argv) {
-    set_log_level(LOG_NORMAL);
-
-    signal(SIGINT, safe_close);
-    signal(SIGPIPE, SIG_IGN);
-
-    if (argc < 3) {
+int main(int argc, char *argv[]) {
+    // Check the number of arguments
+    if (argc != 3) {
         print_usage_and_exit();
     }
 
-    if (tfs_init(NULL) != 0) {
-        PANIC("Failed to init tfs\n");
-    }
-
+    // Parse arguments
     in_pipe_path = argv[1];
+    int max_sessions = atoi(argv[2]);
 
-    if (unlink(in_pipe_path) != 0 && errno != ENOENT) {
-        PANIC("Failed to unlink pipe: %s\n", strerror(errno));
+    // Create input pipe
+    if (mkfifo(in_pipe_path, 0666) < 0) {
+        PANIC("Failed to create pipe '%s': %s\n", in_pipe_path, strerror(errno));
     }
 
-    if (mkfifo(in_pipe_path, 0777) < 0) {
-        PANIC("mkfifo failed: %s\n", strerror(errno));
-    }
-
-    printf("Starting mbroker with registry pipe '%s'", in_pipe_path);
-
-    fd_in = open(in_pipe_path, O_RDONLY);
+    // Open input pipe
+    fd_in = open(in_pipe_path, O_RDONLY | O_NONBLOCK);
     if (fd_in < 0) {
-        unlink(in_pipe_path);
-        PANIC("Failed to open server pipe\n");
+        PANIC("Failed to open pipe '%s': %s\n", in_pipe_path, strerror(errno));
     }
 
-    while (true) {
-        int tmp_fd = open(in_pipe_path, O_RDONLY);
+    // Set up signal handlers for clean exit
+    signal(SIGINT, safe_close);
+    signal(SIGTERM, safe_close);
 
-        if (tmp_fd < 0) {
-            if (errno == ENOENT) {
-                return 0;
-            }
-            WARN("Failed to open server pipe");
-            safe_close(EXIT_FAILURE);
+    // Initialize data structures
+    head = NULL;
+
+    // Main loop
+    for (int i = 0; i < max_sessions; i++) {
+        char client_path[MAX_PIPE_NAME + 1];
+        ssize_t bytes_read;
+
+        // Read from input pipe
+        bytes_read = safe_read(fd_in, client_path, sizeof(char) * MAX_PIPE_NAME);
+        client_path[MAX_PIPE_NAME] = '\0';
+
+        if (bytes_read != sizeof(char) * MAX_PIPE_NAME) {
+            printf("Error reading from pipe %s\n", in_pipe_path);
+            continue;
         }
 
-        if (close(tmp_fd) < 0) {
-            WARN("Failed to close pipe");
-            safe_close(EXIT_FAILURE);
+        // Open output pipe
+        int fd_out = open(client_path, O_WRONLY);
+        if (fd_out < 0) {
+            printf("Error opening pipe %s\n", client_path);
+            continue;
         }
 
-        ssize_t b_read;
-        uint8_t op_code;
+        // Read opcode
+        uint8_t opcode;
+        bytes_read = safe_read(fd_in, &opcode, sizeof(uint8_t));
+        if (bytes_read != sizeof(uint8_t)) {
+            printf("Error reading opcode from pipe %s\n", in_pipe_path);
+            close(fd_out);
+            continue;
+        }
 
-        b_read = safe_read(fd_in, &op_code, sizeof(uint8_t));
-
-        while (b_read > 0) {
-            switch (op_code) {
+        // Handle request
+        switch (opcode) {
             case TFS_OPCODE_CRT_BOX:
-                if (handle_box_wrapper(create_box) != 0) {
-                    WARN("Error creating a new box");
-                }
+                handle_box_wrapper(create_box);
                 break;
-
             case TFS_OPCODE_RMV_BOX:
-                if (handle_box_wrapper(remove_box) != 0) {
-                    WARN("Error removing a box");
-                }
+                handle_box_wrapper(remove_box);
                 break;
-
             case TFS_OPCODE_LST_BOX:
-                if (handle_list_boxes() != 0) {
-                    WARN("Error listing boxes");
-                }
+                handle_list_boxes();
                 break;
-
             default:
+                printf("Invalid opcode received: %d\n", opcode);
                 break;
-            }
-            b_read = safe_read(fd_in, &op_code, sizeof(uint8_t));
         }
 
-        if (b_read < 0) {
-            WARN("Failed to read pipe");
-            safe_close(EXIT_FAILURE);
-        }
+        // Close output pipe
+        close(fd_out);
     }
 
-    return 0;
+    safe_close(EXIT_SUCCESS);
 }

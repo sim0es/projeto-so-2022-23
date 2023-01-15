@@ -8,7 +8,8 @@
 #define MAX_BOX_COUNT 16
 #define MAX_BOX_NAME 32
 #define MAX_PIPE_NAME 256
-#define MAX_ERR_MSG 1024
+#define MAX_ERROR_MSG 1024
+#define MAX_PUB_MSG 1024
 
 typedef enum {
     TFS_OPCODE_REG_PUB = 1,
