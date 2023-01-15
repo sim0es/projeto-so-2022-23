@@ -10,6 +10,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <pthread.h>
+
+pthread_mutex_t new_box_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static int fd_in;
 static char *in_pipe_path;
@@ -17,7 +20,7 @@ static char *in_pipe_path;
 static int box_count = 0;
 static node_t *head = NULL;
 
-static void print_usage_and_exit() {
+static void print_instructions() {
     fprintf(stderr, "usage: mbroker <pipename> <max_sessions>\n");
     exit(EXIT_FAILURE);
 }
@@ -41,58 +44,176 @@ void safe_close(int status) {
     exit(status);
 }
 
-// alterada
-static int create_box(char *box_name, char *error_msg) 
-{
-    int ret_status = -1;
-    box_t *box = find_box(head, box_name);
+int subscriber() {
+    ssize_t bytes_read;
+    char client_path[MAX_PIPE_NAME + 1] = {0};
+    char box_name[MAX_BOX_NAME + 1] = {0};
 
-    if (box == NULL) 
-    {
-        box = malloc(sizeof(box_t));
-        init_tfs_box(box, box_name);
+    bytes_read = read(fd_in, client_path, sizeof(char) * MAX_PIPE_NAME);
+    if (bytes_read != sizeof(char) * MAX_PIPE_NAME) {
+        if (bytes_read == -1) {
+            WARN("Error reading from register pipe: %s", strerror(errno));
+        } else {
+            WARN("Unexpected number of bytes read from register pipe. \
+                    Expected %lu, got %lu", sizeof(char) * MAX_PIPE_NAME, bytes_read);
+        }
+        return -1;
+    }
+
+    bytes_read = read(fd_in, box_name, sizeof(char) * MAX_BOX_NAME);
+    if (bytes_read != sizeof(char) * MAX_BOX_NAME) {
+        if (bytes_read == -1) {
+            WARN("Error reading from register pipe: %s", strerror(errno));
+        } else {
+            WARN("Unexpected number of bytes read from register pipe. \ 
+                    Expected %lu, got %lu", sizeof(char) * MAX_BOX_NAME, bytes_read);
+        }
+        return -1;
+    }
+
+    return 0;
+}
+
+int handle_publisher() {
+    ssize_t bytes_read;
+    char client_path[MAX_PIPE_NAME + 1] = {0};
+    char box_name[MAX_BOX_NAME + 1] = {0};
+
+    bytes_read = read(fd_in, client_path, sizeof(char) * MAX_PIPE_NAME);
+    if (bytes_read != sizeof(char) * MAX_PIPE_NAME) {
+        WARN("Error reading from register pipe");
+        return -1;
+    }
+    bytes_read = read(fd_in, box_name, sizeof(char) * MAX_BOX_NAME);
+    if (bytes_read != sizeof(char) * MAX_BOX_NAME) {
+        WARN("Error reading from register pipe");
+        return -1;
+    }
+
+    int client_fd = open(client_path, O_RDONLY);
+    if (client_fd < 0) {
+        WARN("Error opening pipe: '%s' - %s", client_path, strerror(errno));
+        return -1;
+    }
+
+    box_t *box = find_box(head, box_name);
+    if (box == NULL || box->n_publishers > 0) {
+        close(client_fd);
+        WARN("Error registering publisher");
+        return -1;
+    }
+
+    box->n_publishers++;
+
+    uint8_t pub_opcode;
+    char message[MAX_PUB_MSG + 1] = {0};
+
+    bytes_read = safe_read(client_fd, &pub_opcode, sizeof(uint8_t));
+    while (bytes_read > 0) {
+        if (pub_opcode != TFS_OPCODE_PUB_MSG) {
+            PANIC("Invalid opcode %u\n", pub_opcode);
+        }
+        bytes_read = safe_read(client_fd, message, MAX_PUB_MSG);
+        if (bytes_read != MAX_PUB_MSG) {
+            PANIC("Error reading from pipe: '%s'", client_path);
+        }
+        INFO("Received message: %s", message);
+        int fhandle = tfs_open(box_name, TFS_O_APPEND);
+        if (fhandle == -1) {
+            WARN("Can't open tfs file");
+            return -1;
+        }
+
+        ssize_t bytes_written =
+            tfs_write(fhandle, message, strlen(message) + 1);
+        tfs_close(fhandle);
+        if (bytes_written != strlen(message) + 1) {
+            WARN("Error writing to tfs file");
+            return -1;
+        }
+        memset(message, 0, MAX_PUB_MSG);
+        bytes_read = safe_read(client_fd, &pub_opcode, sizeof(uint8_t));
+    }
+
+    if (bytes_read < 0) {
+        WARN("Error reading from pipe: '%s'", in_pipe_path);
+        return -1;
+    }
+
+    INFO("Publisher closed the session");
+    box->n_publishers--;
+
+    return 0;
+}
+
+static int new_box(char *box_name, char *error_msg) {
+    int ret_status = -1;
+    box_t *box;
+
+    pthread_mutex_init(&new_box_lock, NULL);
+    pthread_mutex_lock(&new_box_lock); // acquire the mutex
+    
+    box = malloc(sizeof(box_t));
+    init_tfs_box(box, box_name);
+
+    int fhandle = tfs_open(box_name, TFS_O_APPEND);
+    if (fhandle == -1) {
+        fhandle = tfs_open(box_name, TFS_O_CREAT);
+        if (fhandle != -1) {
+            ret_status = 0;
+            if (tfs_close(fhandle) != 0) {
+                snprintf(error_msg, MAX_ERROR_MSG, "Error closing box.");
+            }
+        } else {
+            snprintf(error_msg, MAX_ERROR_MSG, "Error creating file.");
+        }
+    } else {
+        snprintf(error_msg, MAX_ERROR_MSG, "Box name already exists.");
+        if (tfs_close(fhandle) != 0) {
+            snprintf(error_msg, MAX_ERROR_MSG, "Error closing box.");
+        }
+    }
+    if (ret_status == 0) {
         append_box(&head, box);
         box_count++;
-        ret_status = 0;
-    } else 
-    {
-        strcpy(error_msg, "Box name already exists.");
+    } else {
+        free(box);
     }
+    pthread_mutex_unlock(&new_box_lock); // release the mutex
+    pthread_mutex_destroy(&new_box_lock);
     return ret_status;
 }
 
-// alterada
 static int remove_box(char *box_name, char *error_msg) 
 {
-    box_t *box = find_box(head, box_name);
-    if (box != NULL) {
-        delete_box(&head, box_name);
-        box_count--;
-        free(box);
-        return 0;
-    } else {
+    delete_box(&head, box_name);
+    box_count--;
+
+    if (tfs_unlink(box_name) != 0) {
         strcpy(error_msg, "Error deleting box.");
         return -1;
     }
+
+    return 0;
 }
 
 static void write_box(void *packet, box_t *box, uint8_t last, size_t *offset) {
     const uint8_t ret_opcode = TFS_OPCODE_ANS_LST_BOX;
 
+    packet_cpy(packet, offset, &box->n_subscribers, sizeof(uint64_t));
+    packet_cpy(packet, offset, &box->n_publishers, sizeof(uint64_t));
     packet_cpy(packet, offset, &ret_opcode, sizeof(uint8_t));
+    packet_cpy(packet, offset, &box->size, sizeof(uint64_t));
     packet_cpy(packet, offset, &last, sizeof(uint8_t));
     packet_cpy(packet, offset, box->name, sizeof(char) * MAX_BOX_NAME);
-    packet_cpy(packet, offset, &box->size, sizeof(uint64_t));
-    packet_cpy(packet, offset, &box->n_publishers, sizeof(uint64_t));
-    packet_cpy(packet, offset, &box->n_subscribers, sizeof(uint64_t));
 }
 
-// alterada
 int handle_box_wrapper(int (*handle_box_func)(char *, char *)) {
     char client_path[MAX_PIPE_NAME + 1];
     char box_name[MAX_BOX_NAME + 1];
     char error_msg[MAX_ERROR_MSG + 1] = {0};
     ssize_t bytes_read;
+    int ret;
 
     bytes_read = safe_read(fd_in, client_path, sizeof(char) * MAX_PIPE_NAME);
     client_path[MAX_PIPE_NAME] = '\0';
@@ -106,69 +227,25 @@ int handle_box_wrapper(int (*handle_box_func)(char *, char *)) {
     box_name[MAX_BOX_NAME] = '\0';
 
     if (bytes_read != sizeof(char) * MAX_BOX_NAME) {
-        PANIC("Error reading from pipe %s\n", in_pipe_path);
+        printf("Error reading from pipe %s\n", in_pipe_path);
         return -1;
     }
 
-    uint8_t ret_op_code = TFS_OPCODE_ANS_CRT_BOX;
-    int ret_status = handle_box_func(box_name, error_msg);
+    ret = handle_box_func(box_name, error_msg);
 
-    int client_fd = open(client_path, O_WRONLY);
-    if (client_fd < 0) {
-        printf("Failed to open client pipe: %s", client_path);
+    if (ret < 0) {
+        int client_fd = open(client_path, O_WRONLY);
+        if (client_fd < 0) {
+            printf("Error opening client pipe %s\n", client_path);
+            return -1;
+        }
+
+        safe_write(client_fd, error_msg, sizeof(char) * MAX_ERROR_MSG);
+        close(client_fd);
         return -1;
-    }
-
-    size_t offset = 0;
-    size_t packet_len = sizeof(uint8_t) + sizeof(int);
-
-    if (ret_status != 0) {
-        packet_len += sizeof(char) * MAX_ERROR_MSG;
-    }
-
-    void *packet = malloc(packet_len);
-
-    if (ret_status == 0) {
-        const uint8_t ret_opcode = TFS_OPCODE_ANS_OK;
-        packet = malloc(sizeof(uint8_t));
-        packet_cpy(packet, &offset, &ret_opcode, sizeof(uint8_t));
     } else {
-        const uint8_t ret_opcode = TFS_OPCODE_ANS_ERR;
-        packet = malloc(sizeof(uint8_t) + sizeof(char) * MAX_ERROR_MSG);
-        offset = 0;
-        packet_cpy(packet, &offset, &ret_opcode, sizeof(uint8_t));
-        packet_cpy(packet, &offset, error_msg, sizeof(char) * MAX_ERROR_MSG);
+        return 0;
     }
-
-    ssize_t bytes_written = safe_write(client_fd, packet, offset);
-    if (bytes_written != offset) {
-        WARN("Error writing to pipe: '%s'\n", client_path);
-    }
-
-    free(packet);
-    close(client_fd);
-
-    return ret_status;
-        
-    // size_t offset = 0;
-    // size_t packet_len = sizeof(uint8_t) + sizeof(int);
-    // packet_len += sizeof(char) * MAX_ERROR_MSG;
-
-    // void *packet = malloc(packet_len);
-    // packet_cpy(packet, &offset, &ret_op_code, sizeof(uint8_t));
-    // packet_cpy(packet, &offset, &ret_status, sizeof(int32_t));
-    // packet_cpy(packet, &offset, error_msg, sizeof(char) * MAX_ERROR_MSG);
-
-    // ssize_t written = safe_write(client_fd, packet, packet_len);
-    // close(client_fd);
-
-    // if (written != packet_len || ret_status != 0) {
-    //     return -1;
-    // }
-
-    // printf("Box '%s' successfully closed.\n", box_name);
-
-    // return 0;
 }
 
 int handle_list_boxes(void) {
@@ -210,7 +287,7 @@ int handle_list_boxes(void) {
 int main(int argc, char *argv[]) {
     // Check the number of arguments
     if (argc != 3) {
-        print_usage_and_exit();
+        print_instructions();
     }
 
     // Parse arguments
@@ -268,13 +345,19 @@ int main(int argc, char *argv[]) {
         // Handle request
         switch (opcode) {
             case TFS_OPCODE_CRT_BOX:
-                handle_box_wrapper(create_box);
+                handle_box_wrapper(new_box);
                 break;
             case TFS_OPCODE_RMV_BOX:
                 handle_box_wrapper(remove_box);
                 break;
             case TFS_OPCODE_LST_BOX:
                 handle_list_boxes();
+                break;
+            case TFS_OPCODE_REG_SUB:
+                subscriber();
+                break;
+            case TFS_OPCODE_REG_PUB:
+                publisher();
                 break;
             default:
                 printf("Invalid opcode received: %d\n", opcode);
@@ -286,4 +369,5 @@ int main(int argc, char *argv[]) {
     }
 
     safe_close(EXIT_SUCCESS);
+    return 0;
 }
