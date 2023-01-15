@@ -56,6 +56,11 @@ int commands_to_box(char *box_name, tfs_opcode_t op_code) {
     int32_t ret_status;
     char error_msg[MAX_ERROR_MSG + 1];
 
+    if (ret_op_code != TFS_OPCODE_ANS_CRT_BOX &&
+        ret_op_code != TFS_OPCODE_ANS_RMV_BOX) {
+        PANIC("Invalid opcode %d\n", ret_op_code);
+    }
+
     if (ret_status != 0) {
         if (safe_read(in_fd, error_msg, sizeof(char) * MAX_ERROR_MSG) != sizeof(char) * MAX_ERROR_MSG) {
             WARN("Error reading from pipe: %s\n", in_pipe_path);
