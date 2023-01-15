@@ -134,10 +134,10 @@ int handle_box_wrapper(int (*handle_box_func)(char *, char *)) {
         packet_cpy(packet, &offset, &ret_opcode, sizeof(uint8_t));
     } else {
         const uint8_t ret_opcode = TFS_OPCODE_ANS_ERR;
-        packet = malloc(sizeof(uint8_t) + sizeof(char) * MAX_ERR_MSG);
+        packet = malloc(sizeof(uint8_t) + sizeof(char) * MAX_ERROR_MSG);
         offset = 0;
         packet_cpy(packet, &offset, &ret_opcode, sizeof(uint8_t));
-        packet_cpy(packet, &offset, error_msg, sizeof(char) * MAX_ERR_MSG);
+        packet_cpy(packet, &offset, error_msg, sizeof(char) * MAX_ERROR_MSG);
     }
 
     ssize_t bytes_written = safe_write(client_fd, packet, offset);
